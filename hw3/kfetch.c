@@ -30,7 +30,7 @@ void kfetch_print_info(int fd)
     int len;
     char buf[KFETCH_BUF_SIZE];
 
-    len = read(fd, buf, 1);
+    len = read(fd, buf, KFETCH_BUF_SIZE);
     if (len < 0)
         err_quit("read");
     buf[len] = '\0';

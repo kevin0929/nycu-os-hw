@@ -41,29 +41,77 @@ static void fetch_system_info(char *buf, int mask)
     si_meminfo(&info);
     ktime_get_real_ts64(&uptime);
 
-    offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "%s\n", utsname()->nodename);
-    offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "----------------------\n");
+    char *logo[] = {
+        "                   ",
+        "        .-.        ",
+        "       (.. |       ",
+        "       <>  |       ",
+        "      / --- \\      ",
+        "     ( |   | )     ",
+        "   |\\\\_)__(_//|    ",
+        "  <__)------(__>   "
+    };
+    const int logo_lines = sizeof(logo) / sizeof(logo[0]);
 
-    if (mask & KFETCH_RELEASE)
-        offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "Kernel: %s\n", utsname()->release);
+    char *info_lines[logo_lines];
+    for (int i = 0; i < logo_lines; i++) {
+        info_lines[i] = "";
+    }
 
-    if (mask & KFETCH_CPU_MODEL)
-        offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "CPU: Generic CPU Model\n");
+    int info_count = 0;
 
-    if (mask & KFETCH_NUM_CPUS)
-        offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "CPUs: %u / %u\n",
-                            num_online_cpus(), num_possible_cpus());
+    info_lines[info_count++] = utsname()->nodename;
+    info_lines[info_count++] = "----------------------";
 
-    if (mask & KFETCH_MEM)
-        offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "Mem: %lu MB / %lu MB\n",
-                            info.freeram >> 10, info.totalram >> 10);
+    if (mask & KFETCH_RELEASE){
+        static char release_info[64];
+        snprintf(release_info, sizeof(release_info), "Kernel: %s", utsname()->release);
+        info_lines[info_count++] = release_info;
+    }
 
-    if (mask & KFETCH_UPTIME)
-        offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "Uptime: %llu mins\n",
-                            (unsigned long long)uptime.tv_sec / 60);
+    if (mask & KFETCH_CPU_MODEL){
+        static char cpu_model_info[64];
+        snprintf(cpu_model_info, sizeof(cpu_model_info), "CPU: %s", boot_cpu_data.x86_model_id);
+        info_lines[info_count++] = cpu_model_info;
+    }
 
-    if (mask & KFETCH_NUM_PROCS)
-        offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset, "Procs: 906\n");
+    if (mask & KFETCH_NUM_CPUS) {
+        static char cpu_info[32];
+        snprintf(cpu_info, sizeof(cpu_info), "CPUs: %u / %u", num_online_cpus(), num_possible_cpus());
+        info_lines[info_count++] = cpu_info;
+    }
+
+    if (mask & KFETCH_MEM) {
+        static char mem_info[64];
+        snprintf(mem_info, sizeof(mem_info), "Mem: %lu MB / %lu MB", info.freeram >> 10, info.totalram >> 10);
+        info_lines[info_count++] = mem_info;
+    }
+
+    if (mask & KFETCH_NUM_PROCS) {
+        int proc_count = 0;
+        struct task_struct *task;
+        for_each_process(task) {
+            proc_count++;
+        }
+        static char procs_info[32];
+        snprintf(procs_info, sizeof(procs_info), "Procs: %d", proc_count);
+        info_lines[info_count++] = procs_info;
+    }
+
+    if (mask & KFETCH_UPTIME) {
+        static char uptime_info[32];
+        snprintf(uptime_info, sizeof(uptime_info), "Uptime: %llu mins", (unsigned long long)uptime.tv_sec / 60);
+        info_lines[info_count++] = uptime_info;
+    }
+
+    if (info_count > logo_lines) {
+        info_count = logo_lines;
+    }
+
+    for (int i = 0; i < logo_lines; i++) {
+        offset += scnprintf(buf + offset, KFETCH_BUF_SIZE - offset,
+                            "%s  %s\n", logo[i], (i < info_count ? info_lines[i] : ""));
+    }
 }
 
 static ssize_t kfetch_read(struct file *file, char __user *buffer, size_t len, loff_t *offset)
@@ -131,7 +179,7 @@ static int __init kfetch_init(void)
         return major;
     }
 
-    kfetch_class = class_create(THIS_MODULE, DEVICE_NAME);
+    kfetch_class = class_create(DEVICE_NAME);
     if (IS_ERR(kfetch_class)) {
         unregister_chrdev(major, DEVICE_NAME);
         kfree(kfetch_buf);
@@ -146,7 +194,6 @@ static int __init kfetch_init(void)
         return PTR_ERR(kfetch_device);
     }
 
-    pr_info("kfetch loaded: /dev/%s\n", DEVICE_NAME);
     return 0;
 }
 
@@ -156,7 +203,6 @@ static void __exit kfetch_exit(void)
     class_destroy(kfetch_class);
     unregister_chrdev(major, DEVICE_NAME);
     kfree(kfetch_buf);
-    pr_info("kfetch unloaded\n");
 }
 
 module_init(kfetch_init);
